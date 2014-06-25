@@ -1,0 +1,13 @@
+#! /bin/bash
+
+if [ "z$1" == z ] ; then
+    echo "USAGE: $0 [git commit id]"
+    exit 1
+fi
+
+NAME=prob-snapshot
+GITID=$1
+
+PREFIX=$NAME-git-$GITID
+
+git archive --prefix="$PREFIX/" --format=tar.gz -o "$PREFIX.tar.gz" $GITID
