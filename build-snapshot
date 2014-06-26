@@ -1,13 +1,18 @@
 #! /bin/bash
 
 if [ "z$1" == z ] ; then
-    echo "USAGE: $0 [git commit id]"
+    echo "USAGE: $0 [git commit id [flavor name]]"
     exit 1
+fi
+if [ "z$2" == z ]; then
+    FLAVOR=$GITID
+else
+    FLAVOR=$2
 fi
 
 NAME=prob-snapshot
 GITID=$1
 
-PREFIX=$NAME-git-$GITID
+PREFIX=$NAME-git-$FLAVOR
 
 git archive --prefix="$PREFIX/" --format=tar.gz -o "$PREFIX.tar.gz" $GITID
