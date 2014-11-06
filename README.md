@@ -23,4 +23,4 @@ The following instructions assume you want to write programs using a specific sn
 2. Extract the snapshot into a directory like 'prob-snapshot-vvvvvv" (where vvvvvv is the snapshot version).
   * command line: `tar xzf prob-snapshot-vvvvvvv.tar.gz`
 3. Install the snapshot version of `prob` as a Racket package.
-  * `raco pkg install --link prob-snapshot-vvvv`
+  * `raco pkg install --link prob-snapshot-vvvv/prob`
