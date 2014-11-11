@@ -18,8 +18,13 @@ export PLTADDONDIR
 echo "Running racket --version"
 racket --version
 
-echo "Running $ENGROOT/prob/examples/intro-enum.rkt (might take a while)"
-racket $ENGROOT/prob/examples/intro-enum.rkt
+if [ ! -f ./prob/examples/intro-enum.rkt ]; then
+    echo "Please run the verifyinstall.sh script from the directory containing the prob/examples/ directory"
+    exit 1
+fi
 
-echo "Running $ENGROOT/prob/examples/linear-regression-mh.rkt (might take a while)"
-racket $ENGROOT/prob/examples/linear-regression-mh.rkt
+echo "Running ./examples/intro-enum.rkt (might take a while)"
+racket ./prob/examples/intro-enum.rkt
+
+echo "Running ./examples/linear-regression-mh.rkt (might take a while)"
+racket ./prob/examples/linear-regression-mh.rkt
