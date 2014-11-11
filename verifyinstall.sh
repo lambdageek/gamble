@@ -8,6 +8,13 @@ if [ "z$ENGROOT" = "z" ]; then
    exit 1
 fi
 
+if [ "z$PLTADDONDIR" = "z" ]; then
+    PLTADDONDIR=$ENGROOT/.Racket
+    echo "PLTADDONDIR environment variable not set; assuming $PLTADDONDIR"
+fi
+mkdir -p $PLTADDONDIR
+export PLTADDONDIR
+
 echo "Running racket --version"
 racket --version
 

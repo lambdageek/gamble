@@ -22,5 +22,11 @@ The following instructions assume you want to write programs using a specific sn
   * command line: `raco pkg remove prob`
 2. Extract the snapshot into a directory like 'prob-snapshot-vvvvvv" (where vvvvvv is the snapshot version).
   * command line: `tar xzf prob-snapshot-vvvvvvv.tar.gz`
+3. Set the environment variable PLTADDONDIR to the directory that 
+hosts the user-specific Racket configuration.
+  * `export PLTADDONDIR=$ADDONDIR/.racket`
+  * `mkdir $PLDADDONDIR`
 3. Install the snapshot version of `prob` as a Racket package.
   * `raco pkg install --link prob-snapshot-vvvv/prob`
+
+To run prob, ensure that PLTADDONDIR is set and star Racket.
