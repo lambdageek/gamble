@@ -9,7 +9,7 @@
                      syntax/parse/experimental/eh
                      racket/syntax)
          racket/contract
-         racket/match
+         (rename-in racket/match [match-define defmatch])
          racket/math
          racket/pretty
          racket/dict
@@ -23,13 +23,9 @@
          "../private/dist-impl.rkt")
 (provide #| implicit in define-dist-type |#)
 
-;; If every q is 0, returns 0 without evaluating e.
-(define-syntax-rule (ifnz [q ...] e)
-  (if (and (zero? q) ...) 0 e))
-
 ;; Multiply, but short-circuit if first arg evals to 0.
 (define-syntax-rule (lazy* a b ...)
-  (let ([av a]) (ifnz [av] (* av b ...))))
+  (let ([av a]) (if (zero? av) 0 (* av b ...))))
 
 (define (digamma x) (m:psi0 x))
 
@@ -106,7 +102,16 @@
                   [`(geometric-dist _)
                    (beta-dist (+ a (vector-length data))
                               (+ b (vector-sum data)))]
-                  [_ #f])))
+                  [_ #f]))
+  #:drift (lambda (value scale-factor)
+            ;; mode = α / (α + β), peakedness = α + β = S (our choice)
+            ;; So if we want dist peaked at x:
+            ;;   α = S * x
+            ;;   β = S - α = S * (1 - x)
+            (define S 10) ;; "peakedness" parameter
+            (drift:asymmetric (lambda (x) (beta-dist (* S x) (* S (- 1 x)))) value))
+  #:slice-adjust (lambda (value scale-factor)
+                   (+ value scale-factor)))
 
 (define-fl-dist-type cauchy-dist
   ([mode real?]
@@ -121,7 +126,9 @@
               (+ (lazy* ds (/ scale))
                  (* (/ (* 2 scale x-m) (+ (* scale scale) (* x-m x-m)))
                     (- (/ (- dx dm) scale)
-                       (lazy* ds (/ x-m scale scale)))))))
+                       (lazy* ds (/ x-m scale scale))))))
+  #:drift (lambda (value scale-factor) (drift:add-normal value (* scale scale-factor)))
+  #:slice-adjust (lambda (value scale-factor) (+ value (* scale scale-factor))))
 
 (define-fl-dist-type exponential-dist
   ([mean (>/c 0)])
@@ -134,7 +141,9 @@
   #:Denergy (lambda (x [dx 1] [dm 0])
               (define /mean (/ mean))
               (+ (lazy* dm (- /mean (* x /mean /mean)))
-                 (* dx /mean))))
+                 (* dx /mean)))
+  #:drift (lambda (value scale-factor) (drift:mult-exp-normal value (* mean scale-factor)))
+  #:slice-adjust (lambda (value scale-factor) (* value (exp (* mean scale-factor)))))
 
 (define-fl-dist-type gamma-dist
   ([shape (>/c 0)]
@@ -170,7 +179,9 @@
                                (/ (+ (/ scale)
                                      (* 1/2 (for/sum ([x (in-vector data)])
                                               (sqr (- x data-mean)))))))]
-                  [_ #f])))
+                  [_ #f]))
+  #:drift (lambda (value scale-factor) (drift:mult-exp-normal value (* scale (sqrt shape) scale-factor)))
+  #:slice-adjust (lambda (value scale-factor) (* value (exp (* scale (sqrt shape) scale-factor)))))
 
 (define-fl-dist-type inverse-gamma-dist
   ([shape (>/c 0)]
@@ -201,7 +212,9 @@
               (define B (exp (- (/ x-m s))))
               (+ A
                  (lazy* ds (/ s))
-                 (* 2 (/ (+ 1 B)) B (- A)))))
+                 (* 2 (/ (+ 1 B)) B (- A))))
+  #:drift (lambda (value scale-factor) (drift:add-normal value (* scale scale-factor)))
+  #:slice-adjust (lambda (value scale-factor) (+ value (* (/ pi (sqrt 3)) scale scale-factor))))
 
 (define-fl-dist-type pareto-dist
   ([scale (>/c 0)]  ;; x_m
@@ -222,7 +235,10 @@
                    (pareto-dist
                     (for/fold ([acc -inf.0]) ([x (in-vector data)]) (max x acc))
                     (+ shape (vector-length data)))]
-                  [_ #f])))
+                  [_ #f]))
+  #:drift (lambda (value scale-factor)
+            ;; FIXME: maybe drift:mult-exp-normal?
+            #f))
 
 (define-fl-dist-type normal-dist
   ([mean real?]
@@ -253,7 +269,9 @@
                                  (/ (+ (/ (sqr stddev))
                                        (/ (vector-length data)
                                           (sqr data-stddev))))))]
-                  [_ #f])))
+                  [_ #f]))
+  #:drift (lambda (value scale-factor) (drift:add-normal value (* stddev scale-factor)))
+  #:slice-adjust (lambda (value scale-factor) (+ value (* stddev scale-factor))))
 
 (define-fl-dist-type uniform-dist
   ([min real?]
@@ -272,7 +290,19 @@
   #:Denergy (lambda (x [dx 1] [dmin 0] [dmax 0])
               (cond [(<= min x max)
                      (lazy* (- dmax dmin) (/ (- max min)))]
-                    [else 0])))
+                    [else 0]))
+  #:drift (lambda (value scale-factor)
+            ;; Use beta to get proposal for Uniform(0,1), adjust.
+            (define S 10) ;; "peakedness"
+            (define (to-01 x) (/ (- x min) (- max min)))
+            (define (from-01 x) (+ (* x (- max min)) min))
+            (defmatch (cons value* R-F)
+              (drift:asymmetric (lambda (x) (beta-dist (* S x) (* S (- 1 x))))
+                                (to-01 value)))
+            (cons (from-01 value*) R-F))
+  #:slice-adjust (lambda (value scale-factor)
+                   (+ value (* scale-factor (- max min)))))
+
 
 ;; ----------------------------------------
 
@@ -330,3 +360,131 @@
 (define-dist-type improper-dist
   ([ldensity real?])
   #:pdf improper-pdf #:sample improper-sample)
+
+
+;; ============================================================
+;; Univariate dist functions
+
+;; ------------------------------------------------------------
+;; Bernoulli dist functions
+;; -- math/dist version converts exact->inexact
+
+(define (bernoulli-pdf prob v log?)
+  (define p
+    (cond [(= v 0) (- 1 prob)]
+          [(= v 1) prob]
+          [else 0]))
+  (convert-p p log? #f))
+(define (bernoulli-cdf prob v log? 1-p?)
+  (define p
+    (cond [(< v 0) 0]
+          [(< v 1) (- 1 prob)]
+          [else 1]))
+  (convert-p p log? 1-p?))
+(define (bernoulli-inv-cdf prob p0 log? 1-p?)
+  (define p (unconvert-p p0 log? 1-p?))
+  (cond [(<= p (- 1 prob)) 0]
+        [else 1]))
+(define (bernoulli-sample prob)
+  (if (<= (random) prob) 1 0))
+
+
+;; ------------------------------------------------------------
+;; Categorical weighted dist functions
+;; -- Assume weights are nonnegative, normalized.
+
+(define (categorical-pdf probs k log?)
+  (unless (< k (vector-length probs))
+    (error 'categorical-dist:pdf "index out of bounds\n  index: ~e\n  bounds: [0,~s]"
+           k (sub1 (vector-length probs))))
+  (define l (vector-ref probs k))
+  (if log? (log l) l))
+(define (categorical-cdf probs k log? 1-p?)
+  (define p (for/sum ([i (in-range (add1 k))] [prob (in-vector probs)]) prob))
+  (convert-p p log? 1-p?))
+(define (categorical-inv-cdf probs p0 log? 1-p?)
+  (define p (unconvert-p p0 log? 1-p?))
+  (let loop ([i 0] [p p])
+    (cond [(>= i (vector-length probs))
+           (error 'categorical-dist:inv-cdf "out of values")]
+          [(< p (vector-ref probs i))
+           i]
+          [else
+           (loop (add1 i) (- p (vector-ref probs i)))])))
+(define (categorical-sample probs)
+  (categorical-inv-cdf probs (random) #f #f))
+
+
+;; ------------------------------------------------------------
+;; Inverse gamma distribution
+
+(define (m:flinverse-gamma-pdf shape scale x log?)
+  (m:flgamma-pdf shape scale (/ x) log?))
+(define (m:flinverse-gamma-cdf shape scale x log? 1-p?)
+  (m:flgamma-cdf shape scale (/ x) log? 1-p?))
+(define (m:flinverse-gamma-inv-cdf shape scale x log? 1-p?)
+  (/ (m:flgamma-inv-cdf shape scale x log? 1-p?)))
+(define (m:flinverse-gamma-sample shape scale n)
+  (define flv (m:flgamma-sample shape scale n))
+  (for ([i (in-range n)])
+    (flvector-set! flv i (/ (flvector-ref flv i))))
+  flv)
+
+
+;; ------------------------------------------------------------
+;; Pareto distribution
+
+(define (m:flpareto-pdf scale shape x log?)
+  (define lp
+    (if (>= x scale)
+        (- (+ (log shape) (* shape (log scale)))
+           (* (add1 shape) (log x)))
+        -inf.0))
+  (if log? lp (exp lp)))
+(define (m:flpareto-cdf scale shape x log? 1-p?)
+  (define p
+    (if (> x scale)
+        (- 1.0 (expt (/ scale x) shape))
+        0.0))
+  (convert-p p log? 1-p?))
+(define (m:flpareto-inv-cdf scale shape p log? 1-p?)
+  (define p* (unconvert-p p log? 1-p?))
+  (* scale (expt p* (- (/ shape)))))
+(define (m:flpareto-sample scale shape n)
+  (define flv (make-flvector n))
+  (for ([i (in-range n)])
+    (flvector-set! flv i (m:flpareto-inv-cdf scale shape (random) #f #f)))
+  flv)
+
+
+;; ------------------------------------------------------------
+;; Dirichlet distribution
+
+(define-memoize1 (log-multinomial-beta alpha)
+  (- (for/sum ([ai (in-vector alpha)]) (m:log-gamma ai))
+     (m:log-gamma (for/sum ([ai (in-vector alpha)]) ai))))
+
+(define (dirichlet-pdf alpha x log?)
+  (define lp
+    (- (for/sum ([xi (in-vector x)] [ai (in-vector alpha)]) (* (sub1 ai) (log xi)))
+       (log-multinomial-beta alpha)))
+  (if log? lp (exp lp)))
+(define (dirichlet-sample alpha)
+  ;; TODO: batch gamma sampling when all alphas same?
+  (define n (vector-length alpha))
+  (define x (make-vector n))
+  (for ([a (in-vector alpha)] [i (in-range n)])
+    (vector-set! x i (flvector-ref (m:flgamma-sample a 1.0 1) 0)))
+  (define gsum (for/sum ([g (in-vector x)]) g))
+  (for ([i (in-range n)])
+    (vector-set! x i (/ (vector-ref x i) gsum)))
+  x)
+
+
+;; ============================================================
+;; Improper dist functions
+
+(define (improper-pdf ldensity v log?)
+  (if log? ldensity (exp ldensity)))
+(define (improper-sample ldensity)
+  (error 'improper-dist:sample "not implemented"))
