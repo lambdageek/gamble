@@ -24,7 +24,7 @@ The following instructions assume you want to write programs using a specific sn
   * command line: `tar xzf prob-snapshot-vvvvvvv.tar.gz`
 3. Set the environment variable PLTADDONDIR to the directory that 
 hosts the user-specific Racket configuration.
-  * `export PLTADDONDIR=$ENGROOT/.racket`
+  * `export PLTADDONDIR=$ENGROOT/.Racket`
   * `mkdir $PLDADDONDIR`
 3. Install the snapshot version of `prob` as a Racket package.
   * `raco pkg install --link prob-snapshot-vvvv/prob`
