@@ -35,7 +35,11 @@
 (define (drift:add-normal value scale)
   (cons (sample-normal value scale) 0))
 (define (drift:mult-exp-normal value scale)
-  (cons (* value (exp (sample-normal 0 scale))) 0))
+  (define sn (sample-normal 0 scale))
+  (define value* (* value (exp sn)))
+  (when (eqv? value* +nan.0)
+    (eprintf "value = ~s, scale = ~s, sn = ~s\n" value scale sn))
+  (cons value* 0))
 (define (drift:asymmetric f value)
   (define forward-dist (f value))
   (define value* (dist-sample forward-dist))
@@ -44,6 +48,30 @@
         (- (dist-pdf backward-dist value #t)
            (dist-pdf forward-dist value* #t))))
 
+(define (drift:add-discrete-normal value0 scale0 lo0 hi0)
+  (define value (exact->inexact value0))
+  (define scale (exact->inexact scale0))
+  (define lo (exact->inexact lo0))
+  (define hi (exact->inexact hi0))
+  (define (round-from-zero x) (if (> x 0) (ceiling x) (floor x)))
+  (define (discrete-normal-sample mean stddev)
+    (let loop ()
+      (define s (flvector-ref (m:flnormal-sample 0.0 stddev 1) 0))
+      (define s* (+ mean (round-from-zero s)))
+      (if (<= lo s* hi)
+          s*
+          (loop))))
+  (define (discrete-normal-log-pdf mean stddev x)
+    (- (m:flnormal-pdf mean stddev x #t)
+       (log (- (discrete-normal-cdf mean stddev hi)
+               (discrete-normal-cdf mean stddev lo)))))
+  (define (discrete-normal-cdf mean stddev x) ;; FIXME: logspace?
+    (m:flnormal-cdf (exact->inexact mean) (exact->inexact stddev)
+                    (exact->inexact (round-from-zero x)) #f #f))
+  (define value* (discrete-normal-sample value scale))
+  (define R (discrete-normal-log-pdf value* scale value))
+  (define F (discrete-normal-log-pdf value scale value*))
+  (cons (inexact->exact value*) (- R F)))
 
 ;; ============================================================
 ;; Utils
@@ -66,7 +94,7 @@
 
 (define (convert-p p log? 1-p?)
   (define p* (if 1-p? (- 1 p) p))
-  (if log? (log p*) p*))
+  (if log? (log (exact->inexact p*)) p*))
 
 (define (filter-modes f ms)
   (define-values (best best-p)

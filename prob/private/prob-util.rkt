@@ -4,6 +4,7 @@
 
 #lang racket/base
 (require racket/class
+         (rename-in racket/match [match-define defmatch])
          "interfaces.rkt"
          "context.rkt"
          "../dist.rkt")
@@ -153,19 +154,21 @@
 (define ((indicator/predicate p?) x)
   (if (p? x) 1 0))
 
-(define (sampler->discrete-dist s n [f values] #:normalize? [normalize? #t])
+(define (sampler->discrete-dist s n [f values]
+                                #:burn [burn 0]
+                                #:thin [thin 0]
+                                #:normalize? [normalize? #t])
   (define h (make-hash))
-  (cond [(is-a? s sampler<%>)
-         (for ([i (in-range n)])
-           (let ([a (f (send s sample))])
-             (hash-set! h a (add1 (hash-ref h a 0)))))]
-        [(is-a? s weighted-sampler<%>)
-         (for ([i (in-range n)])
-           (let* ([a+p (send s sample/weight)]
-                  [a (f (car a+p))]
-                  [p (cdr a+p)])
-             (hash-set! h a (+ p (hash-ref h a 0)))))]
-        [else (raise-argument-error 'sampler->discrete-dist "sampler" s)])
+  (define (s*)
+    (for ([_ (in-range thin)]) (send s sample/weight))
+    (defmatch (cons v w) (send s sample/weight))
+    (cons (f v) w))
+  (for ([_ (in-range burn)]) (send s sample/weight))
+  (for ([i (in-range n)])
+    (let* ([a+p (send s sample/weight)]
+           [a (car a+p)]
+           [p (cdr a+p)])
+      (hash-set! h a (+ p (hash-ref h a 0)))))
   (table->discrete-dist h normalize?))
 
 (define (table->discrete-dist h normalize?)
@@ -195,6 +198,35 @@
                   #:when (zero? (dist-pdf a bval)))
           (define bweight (dist-pdf b bval))
           (abs bweight)))))
+
+;; ----------------------------------------
+
+;; Sampling
+
+(define (generate-samples s n #:burn [burn 0] #:thin [thin 0])
+  (cond [(sampler? s)
+         (for ([_i (in-range burn)]) (send s sample))
+         (define vs (make-vector n))
+         (for ([i (in-range n)])
+           (for ([_ (in-range thin)]) (send s sample))
+           (vector-set! vs i (send s sample)))
+         vs]
+        [(weighted-sampler? s)
+         (define vs (make-vector n))
+         (define ws (make-vector n))
+         (for ([i (in-range n)])
+           (defmatch (cons v w) (send s sample/weight))
+           (vector-set! vs i v)
+           (vector-set! ws i w))
+         (resample-residual vs ws n)]))
+
+(define (generate-weighted-samples s n #:burn [burn 0] #:thin [thin 0])
+  (for ([_i (in-range burn)]) (send s sample))
+  (define wvs (make-vector n))
+  (for ([i (in-range n)])
+    (for ([_ (in-range thin)]) (send s sample))
+    (vector-set! wvs i (send s sample)))
+  wvs)
 
 ;; ----------------------------------------
 

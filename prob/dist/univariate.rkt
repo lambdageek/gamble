@@ -42,7 +42,8 @@
   #:mean p
   #:median (cond [(> p 1/2) 1] [(= p 1/2) 1/2] [else 0])
   #:modes (cond [(> p 1/2) '(1)] [(= p 1/2) '(0 1)] [else '(0)])
-  #:variance (* p (- 1 p)))
+  #:variance (* p (- 1 p))
+  #:drift (lambda (value scale-factor) (cons (- 1 value) 0.0)))
 
 (define-fl-dist-type binomial-dist
   ([n exact-positive-integer?]
@@ -53,7 +54,14 @@
   #:modes (filter-modes (lambda (x) (m:flbinomial-pdf n p x #f))
                         (let ([m (inexact->exact (floor (* (+ n 1) p)))])
                           (list m (sub1 m))))
-  #:variance (* n p (- 1 p)))
+  #:variance (* n p (- 1 p))
+  #:drift (lambda (value scale-factor)
+            (drift:add-discrete-normal value (* scale-factor (sqrt (* n p (- 1 p)))) 0 n)))
+;; DRIFT: normal w/ computed scale, discretize (round away from zero), add, reject if not in range
+;; (Q: can any reasonable scale lead to high rejection rate?)
+;; NOTE: it's harder than it looks: asymmetric, need to normalize for rejecting, etc
+;; **OR** (Sean recommends): use discrete version of beta resampling for uniform
+;; The proposal is asymmetric in either case.
 
 (define-fl-dist-type geometric-dist
   ([p (real-in 0 1)])
@@ -61,7 +69,9 @@
   #:support '#s(integer-range 0 +inf.0)
   #:mean (/ (- 1 p) p)
   #:modes '(0)
-  #:variance (/ (- 1 p) (* p p)))
+  #:variance (/ (- 1 p) (* p p))
+  #:drift (lambda (value scale-factor)
+            (drift:add-discrete-normal value (* scale-factor (sqrt (- 1 p)) (/ p)) 0 +inf.0)))
 
 (define-fl-dist-type poisson-dist
   ([mean (>/c 0)])
@@ -71,7 +81,9 @@
   #:modes (if (integer? mean)
               (list (inexact->exact mean) (sub1 (inexact->exact mean)))
               (list (inexact->exact (floor mean))))
-  #:variance mean)
+  #:variance mean
+  #:drift (lambda (value scale-factor)
+            (drift:add-discrete-normal value (* scale-factor (sqrt mean)) 0 +inf.0)))
 
 (define-fl-dist-type beta-dist
   ([a (>=/c 0)]
@@ -196,7 +208,12 @@
                     (/ (+ (/ scale)
                           (* 1/2 (for/sum ([x (in-vector data)])
                                    (sqr (- x data-mean)))))))]
-                  [_ #f])))
+                  [_ #f]))
+  #:drift (lambda (value scale-factor)
+            (defmatch (cons value* R-F)
+              (drift:mult-exp-normal (/ value) (* scale (sqrt shape) scale-factor)))
+            (cons (/ value*) R-F))
+  #:slice-adjust (lambda (value scale-factor) (* value (exp (* scale (sqrt shape) scale-factor)))))
 
 (define-fl-dist-type logistic-dist
   ([mean real?]
@@ -235,10 +252,8 @@
                    (pareto-dist
                     (for/fold ([acc -inf.0]) ([x (in-vector data)]) (max x acc))
                     (+ shape (vector-length data)))]
-                  [_ #f]))
-  #:drift (lambda (value scale-factor)
-            ;; FIXME: maybe drift:mult-exp-normal?
-            #f))
+                  [_ #f])))
+;; DRIFT: FIXME
 
 (define-fl-dist-type normal-dist
   ([mean real?]
@@ -355,6 +370,11 @@
                      (vector-set! countv i (add1 (vector-ref countv i))))
                    (dirichlet-dist (vector-map + alpha countv))]
                   [_ #f])))
+;; DRIFT: (1 - eps) * value + eps * Dir(alpha)
+;; ie, weighted avg of current value and new Dirichlet draw
+;; Q: for alpha, should use either same parameters, OR could use uniform (1 ...)???
+;; ** OR **: take current value, multiply by f(scale-factor), use that as Dirichlet param, draw
+;; NOTE: not symmetric!
 
 ;; Not a real dist. Useful for throwing arbitrary factors into a trace.
 (define-dist-type improper-dist

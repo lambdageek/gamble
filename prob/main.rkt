@@ -35,12 +35,7 @@
 (require "private/interfaces.rkt")
 (provide verbose?
          weighted-sampler?
-         sampler?
-         (contract-out
-          [generate-samples
-           (-> sampler? exact-nonnegative-integer? any)]
-          [generate-weighted-samples
-           (-> weighted-sampler? exact-nonnegative-integer? any)]))
+         sampler?)
 
 (require "private/prob-util.rkt")
 (provide (contract-out
@@ -50,7 +45,8 @@
           [fail (->* [] [any/c] any)]
           ;; ----
           [sampler->discrete-dist
-           (->* [weighted-sampler? exact-nonnegative-integer?] [procedure?]
+           (->* [weighted-sampler? exact-nonnegative-integer?]
+                [procedure? #:burn exact-nonnegative-integer? #:thin exact-nonnegative-integer?]
                 discrete-dist?)]
           [indicator/value
            (-> any/c procedure?)]
@@ -63,6 +59,14 @@
           [repeat
            (-> (-> any) exact-nonnegative-integer? 
                list?)]
+          [generate-samples
+           (->* [weighted-sampler? exact-nonnegative-integer?]
+                [#:burn exact-nonnegative-integer? #:thin exact-nonnegative-integer?]
+                any)]
+          [generate-weighted-samples
+           (->* [weighted-sampler? exact-nonnegative-integer?]
+                [#:burn exact-nonnegative-integer? #:thin exact-nonnegative-integer?]
+                any)]
           [resample
            (->* [vector? vector?] 
                 [exact-nonnegative-integer? #:alg (or/c #f 'multinomial 'residual)]
@@ -130,7 +134,8 @@
              [mean vector?]
              [cov vector?])]
           [sampler->statistics
-           (->* [procedure? exact-positive-integer?] [procedure?]
+           (->* [(or/c sampler? procedure?) exact-positive-integer?]
+                [procedure? #:burn exact-nonnegative-integer? #:thin exact-nonnegative-integer?]
                 statistics?)]
           [samples->statistics
            (-> vector? statistics?)]
@@ -139,12 +144,33 @@
                real?)]
           [samples->KS
            (-> vector? dist?
-               real?)])
-         sampler->mean+variance)
+               real?)]
+          [sampler->mean+variance
+           (->* [(or/c sampler? procedure?) exact-positive-integer?]
+                [procedure? #:burn exact-nonnegative-integer? #:thin exact-nonnegative-integer?]
+                any)]))
 
 (require "private/prob-syntax.rkt")
-(provide (except-out (all-from-out "private/prob-syntax.rkt")
-                     importance-stochastic-ctx%))
+(provide observe
+         check-observe
+         with-zone
+         rejection-sampler
+         importance-sampler
+         mh-sampler
+         hmc-sampler
+         enumerate
+         enum-importance-sampler
+         label
+         with-zone
+         derivative
+         ppromise?
+         pdelay
+         (contract-out
+          [pforce (-> ppromise? any)])
+         deflazy
+         defmem
+         table
+         table?)
 
 (require "private/ho-functions.rkt")
 (provide (all-from-out "private/ho-functions.rkt"))
@@ -185,23 +211,34 @@
           [in-particles
            (-> particles? sequence?)]))
 
+(define proposal/c (or/c proposal? (-> proposal?)))
+
 (require "private/prob-mh.rkt")
 (provide mh-transition?
+         proposal?
+         proposal:resample
+         proposal:drift
          (contract-out
+          [default-proposal
+           (parameter/c proposal/c)]
           [cycle
            (->* [] [] #:rest (listof mh-transition?) mh-transition?)]
           [sequence
            (->* [] [] #:rest (listof mh-transition?) mh-transition?)]
           [single-site
-           (->* [] [#:zone any/c #:record-obs? any/c] mh-transition?)]
+           (->* [] [proposal/c #:zone any/c #:record-obs? any/c] mh-transition?)]
           [multi-site
-           (->* [] [#:zone any/c #:record-obs? any/c] mh-transition?)]
+           (->* [] [proposal/c #:zone any/c #:record-obs? any/c] mh-transition?)]
           [hmc
            (->* [] [(>/c 0) exact-positive-integer? #:zone any/c] mh-transition?)]
           [slice
            (->* [] [#:scale (>/c 0) #:zone any/c] mh-transition?)]
           [enumerative-gibbs
-           (->* [] [#:zone any/c #:record-obs? any/c] mh-transition?)]))
+           (->* [] [#:zone any/c #:record-obs? any/c] mh-transition?)]
+          [mixture
+           (->* [(vectorof mh-transition?)] [(vectorof (>=/c 0))] mh-transition?)]
+          [rerun
+           (-> mh-transition?)]))
 
 (require "private/serializable-lambda.rkt")
 (provide lambda/s
