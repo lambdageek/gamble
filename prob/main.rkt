@@ -145,6 +145,10 @@
           [samples->KS
            (-> vector? dist?
                real?)]
+          [sampler->mean
+           (->* [(or/c weighted-sampler? procedure?) exact-positive-integer?]
+                [procedure? #:burn exact-nonnegative-integer? #:thin exact-nonnegative-integer?]
+                any)]
           [sampler->mean+variance
            (->* [(or/c sampler? procedure?) exact-positive-integer?]
                 [procedure? #:burn exact-nonnegative-integer? #:thin exact-nonnegative-integer?]
@@ -159,7 +163,6 @@
          mh-sampler
          hmc-sampler
          enumerate
-         enum-importance-sampler
          label
          with-zone
          derivative
@@ -232,7 +235,12 @@
           [hmc
            (->* [] [(>/c 0) exact-positive-integer? #:zone any/c] mh-transition?)]
           [slice
-           (->* [] [#:scale (>/c 0) #:zone any/c] mh-transition?)]
+           (->* []
+                [#:method (or/c 'double 'step)
+                 #:w (>/c 0)
+                 #:m exact-positive-integer?
+                 #:zone any/c]
+                mh-transition?)]
           [enumerative-gibbs
            (->* [] [#:zone any/c #:record-obs? any/c] mh-transition?)]
           [mixture

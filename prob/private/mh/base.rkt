@@ -16,6 +16,7 @@
   (interface ()
     run  ;; (-> A) Trace -> TransitionResult
     info ;; Nat -> Void
+    feedback ;; Boolean -> Void
     ))
 
 ;; A TransitionResult is one of
@@ -45,30 +46,27 @@
       (iprintf i "Traces rejected by MH threshold: ~s, ~a%\n"
                mh-rejects (%age mh-rejects total)))
 
-    ;; run : (-> A) Trace -> RunResult
+    ;; run : (-> A) Trace -> TransitionResult
     (define/public (run thunk last-trace)
+      (vprintf "Starting transition (~s)\n" (object-name this%))
       (match (run* thunk last-trace)
         [(cons (? real? threshold) trace)
-         (when (verbose?)
-           (eprintf "# accept threshold = ~s\n" (exp threshold)))
+         (vprintf "accept threshold = ~s\n" (exp threshold))
          (define u (log (random)))
          (cond [(< u threshold)
-                (when (verbose?)
-                  (eprintf "# Accepted MH step with ~s\n" (exp u)))
+                (vprintf "Accepted MH step with ~s\n" (exp u))
                 (set! accepts (add1 accepts))
                 (feedback #t)
                 trace]
                [else
-                (when (verbose?)
-                  (eprintf "# Rejected MH step with ~s\n" (exp u)))
+                (vprintf "Rejected MH step with ~s\n" (exp u))
                 (set! mh-rejects (add1 mh-rejects))
                 (feedback #f)
                 #f])]
         [(cons 'fail reason)
          (set! cond-rejects (add1 cond-rejects))
          (feedback #f)
-         (when (verbose?)
-           (eprintf "# Rejected condition (~s)\n" reason))
+         (vprintf "Rejected condition, reason = ~e\n" reason)
          #f]))
 
     ;; run* : (-> A) Trace -> (U (cons Real Trace) (cons 'fail any))
@@ -82,13 +80,16 @@
 
 (define (trace-ll t) (+ (trace-ll-free t) (trace-ll-obs t)))
 
-(define (iprintf i fmt . args)
-  (display (make-string i #\space))
-  (apply printf fmt args))
+(define (error-no-key who zone)
+  (error who "no random choice available to change~a"
+         (if zone (format "\n  zone: ~e" zone) "")))
 
-(define (%age nom denom)
-  (/ (* 100.0 nom) (exact->inexact denom)))
+(define (error-structural who)
+  (error who "illegal for structural choice"))
 
-;; used by slice sampler
-(define (real-dist-adjust-value dist value scale-factor)
-  (*slice-adjust dist value scale-factor))
+(define (check-not-structural who nchoices last-trace)
+  (unless (= nchoices (trace-nchoices last-trace))
+    ;; Note: This check is not sufficient to catch all structural choices;
+    ;; if one choice is lost and another added, nchoices stays the same.
+    ;; See also disallow-fresh? in db-stochastic-ctx%.
+    (error-structural who)))

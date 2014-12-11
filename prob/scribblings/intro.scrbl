@@ -15,18 +15,17 @@
 
 @title[#:tag "intro"]{Introduction}
 
-The @racketmodname[prob] language implements two techniques for
-probabilistic programming. One is a Metropolis-Hastings MCMC sampler
-based on the log-replay technique of @cite{Bher}. The other is a tree
-exploration based on @cite{EPP}, using delimited continuations to
-reify the program as a lazy probability-labeled tree of execution
-paths.
+The @racketmodname[prob] language supports
+@itemlist[
+@item{the expression of generative probabilistic models, and}
+@item{inference over those models.}
+]
 
 @section{Probabilistic Models}
 
-A probabilistic model is a sequence of definitions, expressions, and
-conditions. A model should only use the pure subset of Racket plus the
-elementary random primitives (ERPs) provided by this library.
+A probabilistic model consists a sequence of definitions, expressions,
+and conditions. A model should only use the pure subset of Racket plus
+the random functions provided by this library.
 
 Here is one of the simplest probabilistic models:
 
@@ -34,16 +33,16 @@ Here is one of the simplest probabilistic models:
 (flip)
 ]
 
-The @racket[flip] function is an ERP that flips a coin (optionally
-biased) and returns a boolean result.
+The @racket[flip] function is a random function that flips a coin
+(optionally biased) and returns a boolean result.
 
-ERPs can be mixed with ordinary Racket code:
+Random functions can be mixed with ordinary Racket code:
 
 @interaction[#:eval the-eval
 (repeat (lambda () (flip 0.3)) 10)
 ]
 
-Conditions can be expressed using the ERP @racket[fail]:
+Conditions can be expressed using the @racket[fail] function:
 
 @interaction[#:eval the-eval
 (unless (for/and ([i 10]) (flip 0.3))
@@ -51,7 +50,7 @@ Conditions can be expressed using the ERP @racket[fail]:
 ]
 
 Models are typically executed in the context of a sampler or solver
-designed to explore their probabilistic properties. The general form is
+designed to explore their probability distribution. The general form is
 
 @racketblock[
 (_sampler/solver-form
@@ -360,18 +359,6 @@ flip when it is actually relevant.
 ]
 
 The @racket[enumerate] solver cannot handle continuous random
-variables, but a related sampler called
-@racket[enum-importance-sampler] can explore trees, even those
-involving continuous random variables, and produce weighted samples.
-
-@interaction[#:eval the-eval
-(define (make-ws-cd stddev_R)
-  (enum-importance-sampler
-   (define R (normal 10 stddev_R))
-   (observe-at (normal-dist R 1) 9)
-   R))
-(sampler->mean+variance (make-ws-cd 1) 1000)
-(sampler->mean+variance (make-ws-cd .5) 1000)
-]
+variables.
 
 @(close-eval the-eval)

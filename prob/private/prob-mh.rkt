@@ -60,8 +60,8 @@
        [zone zone]
        [record-obs? record-obs?]))
 
-(define (slice #:scale [scale-factor 1] #:zone [zone #f])
-  (new single-site-slice-mh-transition% (scale-factor scale-factor) (zone zone)))
+(define (slice #:method [method 'double] #:w [w 1] #:m [m 1] #:zone [zone #f])
+  (new slice-mh-transition% (method method) (W w) (M m) (zone zone)))
 
 (define (enumerative-gibbs #:zone [zone #f] #:record-obs? [record-obs? #t])
   (new enumerative-gibbs-mh-transition% (zone zone) (record-obs? record-obs?)))
@@ -121,7 +121,9 @@
       (trace-value best-trace))
 
     (define/override (sample)
-      (sample! transition (if (eq? last-trace init-trace) +inf.0 0))
+      (if (eq? last-trace init-trace)
+          (sample! the-rerun-mh-transition +inf.0)
+          (sample! transition 0))
       (trace-value last-trace))
 
     ;; Updates last-sample; returns #t for new sample, #f if unchanged (tx failed).
@@ -145,7 +147,8 @@
     (define/public (rerun [transition the-rerun-mh-transition])
       (sample! transition 0))
 
-    (define/public (info)
+    (define/override (info)
+      (printf "== MH sampler\n")
       (send transition info 0)
       (when (pair? transition-stack)
         (printf "\n== Pushed transitions\n")
