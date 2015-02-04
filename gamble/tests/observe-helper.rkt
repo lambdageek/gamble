@@ -1,5 +1,4 @@
 ;; Copyright (c) 2015 Ryan Culpepper
-;; Released under the terms of the 2-clause BSD license.
 ;; See the file COPYRIGHT for details.
 
 ;; Helper module for observe.rkt --- just defines contracted function.
