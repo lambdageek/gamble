@@ -10,7 +10,7 @@ else
     FLAVOR=$2
 fi
 
-NAME=prob-snapshot
+NAME=gamble-snapshot
 GITID=$1
 
 PREFIX=$NAME-git-$FLAVOR
