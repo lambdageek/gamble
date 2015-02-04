@@ -4,6 +4,8 @@ if [ "z$1" == z ] ; then
     echo "USAGE: $0 [git commit id [flavor name]]"
     exit 1
 fi
+GITID=$1
+
 if [ "z$2" == z ]; then
     FLAVOR=$GITID
 else
@@ -11,7 +13,6 @@ else
 fi
 
 NAME=gamble-snapshot
-GITID=$1
 
 PREFIX=$NAME-git-$FLAVOR
 
